@@ -50,10 +50,11 @@
 </style>
 </head>
 <body>
+<div id='hardFallback' style='display:none;max-width:520px;margin:60px auto;padding:20px;border:1px solid #4fa3ff;border-radius:10px;background:#1a2129;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'>If you see a blank page, Safari may be showing an older cached copy. Reload the page, or re-upload this updated file as index.html.</div>
 
 <div id="setupScreen" class="setup-box" style="display:none;">
   <h2>🔌 Connect your database (one-time setup)</h2>
-  <p>Paste in your Supabase Project URL and anon key. You'll find both in your Supabase project under Settings → API. This only needs to be done once — it saves in this browser.</p>
+  <p>Paste in your Supabase Project URL and anon key. You'll find both in your Supabase project under Settings → API. This only needs to be done once on each device. If Safari blocks saving, the app will still let you connect for the current session.</p>
   <label>Supabase Project URL</label>
   <input id="setupUrl" placeholder="https://xxxxx.supabase.co">
   <label>Supabase anon public key</label>
@@ -81,6 +82,14 @@
 </div>
 
 <script>
+
+window.addEventListener('error', function() {
+  const el = document.getElementById('hardFallback');
+  if (el) el.style.display = 'block';
+  const setup = document.getElementById('setupScreen');
+  if (setup) setup.style.display = 'block';
+});
+
 const SETUP_KEY = 'pestTrackerSupabaseConfig';
 
 const TASKS = [
@@ -101,22 +110,21 @@ let currentFilter = 'all';
 let logData = {};
 
 function getSetup() {
-  const raw = localStorage.getItem(SETUP_KEY);
-  return raw ? JSON.parse(raw) : null;
+  try { const raw = localStorage.getItem(SETUP_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
 }
 
 function saveSetup() {
   const url = document.getElementById('setupUrl').value.trim();
   const key = document.getElementById('setupKey').value.trim();
   if (!url || !key) { alert('Please fill in both fields'); return; }
-  localStorage.setItem(SETUP_KEY, JSON.stringify({url, key}));
-  initApp();
+  try { localStorage.setItem(SETUP_KEY, JSON.stringify({url, key})); } catch (e) {}
+  try { initApp(); } catch (e) { document.getElementById('setupScreen').style.display = 'block'; document.getElementById('app').style.display = 'none'; console.error(e); }
 }
 
 async function initApp() {
   const cfg = getSetup();
   if (!cfg) {
-    document.getElementById('setupScreen').style.display = 'block';
+    document.body.innerHTML = document.body.innerHTML; document.getElementById('setupScreen').style.display = 'block';
     document.getElementById('app').style.display = 'none';
     return;
   }
