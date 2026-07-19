@@ -41,28 +41,14 @@
   .section-label { grid-column:1/-1; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin:18px 0 -4px; }
   .top-bar { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
   .sync-status { font-size:11px; color:var(--muted); }
-  .setup-box { background:var(--card); border:1px solid var(--accent); border-radius:10px; padding:20px; max-width:480px; margin:60px auto; }
-  .setup-box h2 { font-size:17px; margin-top:0; }
-  .setup-box label { font-size:12px; color:var(--muted); display:block; margin:10px 0 4px; }
-  .setup-box input { width:100%; padding:8px; border-radius:6px; border:1px solid var(--card-border); background:#0f1419; color:var(--text); font-size:13px; }
-  .setup-box button { margin-top:16px; width:100%; padding:10px; background:var(--accent); color:#08111a; border:none; border-radius:6px; font-weight:600; cursor:pointer; }
-  .setup-box p { font-size:12px; color:var(--muted); line-height:1.5; }
+  .banner { max-width:520px; margin:0 auto 20px; padding:14px 16px; border:1px solid var(--overdue); border-radius:10px; background:var(--card); color:var(--text); font-size:13px; display:none; }
 </style>
 </head>
 <body>
-<div id='hardFallback' style='display:none;max-width:520px;margin:60px auto;padding:20px;border:1px solid #4fa3ff;border-radius:10px;background:#1a2129;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;'>If you see a blank page, Safari may be showing an older cached copy. Reload the page, or re-upload this updated file as index.html.</div>
 
-<div id="setupScreen" class="setup-box" style="display:none;">
-  <h2>🔌 Connect your database (one-time setup)</h2>
-  <p>Paste in your Supabase Project URL and anon key. You'll find both in your Supabase project under Settings → API. This only needs to be done once on each device. If Safari blocks saving, the app will still let you connect for the current session.</p>
-  <label>Supabase Project URL</label>
-  <input id="setupUrl" placeholder="https://xxxxx.supabase.co">
-  <label>Supabase anon public key</label>
-  <input id="setupKey" placeholder="eyJhbGciOiJIUzI1NiIs...">
-  <button onclick="saveSetup()">Save & Connect</button>
-</div>
+<div id="errorBanner" class="banner"></div>
 
-<div id="app" style="display:none;">
+<div id="app">
   <div class="top-bar">
     <div>
       <h1>🏠 Home Pest Control Tracker</h1>
@@ -82,15 +68,8 @@
 </div>
 
 <script>
-
-window.addEventListener('error', function() {
-  const el = document.getElementById('hardFallback');
-  if (el) el.style.display = 'block';
-  const setup = document.getElementById('setupScreen');
-  if (setup) setup.style.display = 'block';
-});
-
-const SETUP_KEY = 'pestTrackerSupabaseConfig';
+const SUPABASE_URL = "https://jfbgmciunsnmmrmkogtf.supabase.co";
+const SUPABASE_KEY = "sb_publishable_WItbLaieW0Vqc362h3S1Bw_SoAZHgUw";
 
 const TASKS = [
   { id:'bifenthrin_perimeter', title:'Perimeter Barrier — Bifenthrin 7.9%', category:'Perimeter', freqDays:30, product:'Bifenthrin 7.9% concentrate', mix:'0.5 fl oz/gal routine · 1 fl oz/gal near woods/fence line', how:'Spray 3ft band up foundation + 3ft out on ground, windows, doors, garage frame', seasonal:false },
@@ -109,46 +88,10 @@ let supabase = null;
 let currentFilter = 'all';
 let logData = {};
 
-function getSetup() {
-  try { const raw = localStorage.getItem(SETUP_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
-}
-
-function saveSetup() {
-  const url = document.getElementById('setupUrl').value.trim();
-  const key = document.getElementById('setupKey').value.trim();
-  if (!url || !key) { alert('Please fill in both fields'); return; }
-  try { localStorage.setItem(SETUP_KEY, JSON.stringify({url, key})); } catch (e) {}
-  try { initApp(); } catch (e) { document.getElementById('setupScreen').style.display = 'block'; document.getElementById('app').style.display = 'none'; console.error(e); }
-}
-
-async function initApp() {
-  const cfg = getSetup();
-  if (!cfg) {
-    document.body.innerHTML = document.body.innerHTML; document.getElementById('setupScreen').style.display = 'block';
-    document.getElementById('app').style.display = 'none';
-    return;
-  }
-  document.getElementById('setupScreen').style.display = 'none';
-  document.getElementById('app').style.display = 'block';
-  supabase = window.supabase.createClient(cfg.url, cfg.key);
-  await loadLogs();
-  render();
-}
-
-async function loadLogs() {
-  document.getElementById('syncStatus').textContent = 'Syncing...';
-  const { data, error } = await supabase.from('pest_logs').select('*').order('done_at', {ascending:true});
-  if (error) {
-    document.getElementById('syncStatus').textContent = '⚠️ Connection error — check setup';
-    console.error(error);
-    return;
-  }
-  logData = {};
-  data.forEach(row => {
-    if (!logData[row.task_id]) logData[row.task_id] = [];
-    logData[row.task_id].push(row.done_at);
-  });
-  document.getElementById('syncStatus').textContent = '✓ Synced';
+function showError(msg) {
+  const el = document.getElementById('errorBanner');
+  el.textContent = msg;
+  el.style.display = 'block';
 }
 
 function daysBetween(a, b) { return Math.round((b - a) / (1000*60*60*24)); }
@@ -221,13 +164,36 @@ function render() {
   }
 }
 
+async function loadLogs() {
+  document.getElementById('syncStatus').textContent = 'Syncing...';
+  try {
+    const { data, error } = await supabase.from('pest_logs').select('*').order('done_at', {ascending:true});
+    if (error) throw error;
+    logData = {};
+    (data || []).forEach(row => {
+      if (!logData[row.task_id]) logData[row.task_id] = [];
+      logData[row.task_id].push(row.done_at);
+    });
+    document.getElementById('syncStatus').textContent = '✓ Synced';
+  } catch (e) {
+    document.getElementById('syncStatus').textContent = '⚠️ Sync error';
+    showError('Could not load data from the database. Details: ' + (e.message || e));
+    console.error(e);
+  }
+}
+
 async function markDone(id) {
   const today = new Date().toISOString().slice(0,10);
-  const { error } = await supabase.from('pest_logs').insert({ task_id: id, done_at: today });
-  if (error) { alert('Could not save — check your connection'); console.error(error); return; }
-  if (!logData[id]) logData[id] = [];
-  logData[id].push(today);
-  render();
+  try {
+    const { error } = await supabase.from('pest_logs').insert({ task_id: id, done_at: today });
+    if (error) throw error;
+    if (!logData[id]) logData[id] = [];
+    logData[id].push(today);
+    render();
+  } catch (e) {
+    showError('Could not save this entry. Details: ' + (e.message || e));
+    console.error(e);
+  }
 }
 
 function toggleHist(id) {
@@ -242,7 +208,19 @@ function setFilter(f) {
   render();
 }
 
-initApp();
+async function start() {
+  try {
+    if (!window.supabase) throw new Error('Supabase library failed to load. Check your internet connection.');
+    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    await loadLogs();
+    render();
+  } catch (e) {
+    showError('App failed to start. Details: ' + (e.message || e));
+    console.error(e);
+  }
+}
+
+start();
 </script>
 
 </body>
